@@ -1,0 +1,113 @@
+// These arguments were used when this file was generated. They will be automatically applied on subsequent loads 
+// via the GUI or CLI invocations. Run CLI with '--help' for additional information on how to override these arguments.
+// @cliArgs --board "/ti/boards/CC26X2R1_LAUNCHXL" --product "simplelink_cc13x2_26x2_sdk@3.30.00.03"
+// @versions {"data":"2019083011","timestamp":"2019083011","tool":"1.2.952","templates":"2019083011"}
+
+var RTOS = scripting.addModule("/ti/drivers/RTOS");
+var AESCCM = scripting.addModule("/ti/drivers/AESCCM");
+var AESCCM1 = AESCCM.addInstance();
+var DMA = scripting.addModule("/ti/drivers/DMA");
+var Board = scripting.addModule("/ti/drivers/Board");
+var DriverLib = scripting.addModule("/ti/devices/DriverLib");
+var Power = scripting.addModule("/ti/drivers/Power");
+var CCFG = scripting.addModule("/ti/devices/CCFG");
+var AESECB = scripting.addModule("/ti/drivers/AESECB");
+var AESECB1 = AESECB.addInstance();
+var ECDH = scripting.addModule("/ti/drivers/ECDH");
+var ECDH1 = ECDH.addInstance();
+var AESCTRDRBG = scripting.addModule("/ti/drivers/AESCTRDRBG");
+var AESCTRDRBG1 = AESCTRDRBG.addInstance();
+var NVS = scripting.addModule("/ti/drivers/NVS");
+var NVS1 = NVS.addInstance();
+var RF = scripting.addModule("/ti/drivers/RF");
+var TRNG = scripting.addModule("/ti/drivers/TRNG");
+var TRNG1 = TRNG.addInstance();
+var ble = scripting.addModule("/ti/ble5stack/ble");
+var multi_stack_validate = scripting.addModule("/ti/easylink/multi_stack_validate");
+var GPIO = scripting.addModule("/ti/drivers/GPIO");
+var GPIO1 = GPIO.addInstance();
+var GPIO2 = GPIO.addInstance();
+var UART = scripting.addModule("/ti/drivers/UART");
+var UART1 = UART.addInstance();
+// Name
+AESCCM1.$name = "Board_AESCCM0";
+// Enable Bootloader - Enable ROM Bootloader, for flashing from external host
+CCFG.enableBootloader = true;
+// Enable Bootloader Backdoor - When enabling the Bootloader Backdoor, the Bootloader can be activated externally by pulling a pin, even when a valid flash image is present. Note, enabling the backdoor allows an external host to read back a flash image from the device
+CCFG.enableBootloaderBackdoor = true;
+// Bootloader Backdoor DIO - DIO (pin) to trigger Bootloader backdoor, this pin is only needed at boot
+CCFG.dioBootloaderBackdoor = 13;
+// Trigger Level of Bootloader Backdoor - Active high or low on selected DIO to open boot loader backdoor
+CCFG.levelBootloaderBackdoor = "Active low";
+// Name
+CCFG.ccfgTemplate.$name = "ti_devices_CCFGTemplate0";
+// Name
+AESECB1.$name = "CONFIG_AESECB0";
+// Name
+ECDH1.$name = "CONFIG_ECDH0";
+// Name - The C/C++ identifier used in applications as the index parameter passed to aesctrdrbg runtime APIs
+AESCTRDRBG1.$name = "CONFIG_AESCTRDRBG_0";
+// Name
+AESCTRDRBG1.aesctrObject.$name = "CONFIG_AESCTR_0";
+// Name - The C/C++ identifier used in applications as the index parameter passed to NVS runtime APIs
+NVS1.$name = "CONFIG_NVSINTERNAL";
+// Name
+NVS1.internalFlash.$name = "ti_drivers_nvs_NVSCC26XX0";
+// Region Base - Base address of the region. Must be aligned on an integer multiple of the sector size.
+NVS1.internalFlash.regionBase = 0x48000;
+// Region Size - Size of the region in bytes. Must be a non-zero multiple of the Sector Size
+NVS1.internalFlash.regionSize = 0x4000;
+// Name - The C/C++ identifier used in applications as the index parameter passed to TRNG runtime APIs
+TRNG1.$name = "CONFIG_TRNG_0";
+// Device Role - The BLE device role
+ble.deviceRole = "CENTRAL_CFG";
+// Lock Project
+ble.lockProject = true;
+// Pairing Mode
+ble.bondPairing = "GAPBOND_PAIRING_MODE_INITIATE";
+// Disable the Display Module
+ble.disableDisplayModule = true;
+// Device Name
+ble.deviceName = "BMS Master";
+// Two Button Manu - Active Items Only
+ble.tbmActiveItemsOnly = false;
+// Name
+ble.radioConfig.codeExportConfig.$name = "ti_radioconfig_code_export_param0";
+// Name
+ble.connUpdateParamsCentral.$name = "ti_ble5stack_general_ble_conn_update_params0";
+// Name - The C/C++ identifier used in applications as the index parameter passed to GPIO runtime APIs
+GPIO1.$name = "CONFIG_PIN_BTN1";
+// Use Hardware - Select the hardware to use, or 'None' to use available header pins
+GPIO1.$hardware = system.deviceData.board.components["BTN-1"];
+// Mode - Select the GPIO mode
+GPIO1.mode = "Dynamic";
+// Name
+GPIO1.pinInstance.$name = "CONFIG_PIN_2";
+// Name - The C/C++ identifier used in applications as the index parameter passed to GPIO runtime APIs
+GPIO2.$name = "CONFIG_PIN_BTN2";
+// Use Hardware - Select the hardware to use, or 'None' to use available header pins
+GPIO2.$hardware = system.deviceData.board.components["BTN-2"];
+// Mode - Select the GPIO mode
+GPIO2.mode = "Dynamic";
+// Name
+GPIO2.pinInstance.$name = "CONFIG_PIN_3";
+// Name - The C/C++ identifier used in applications as the index parameter passed to UART runtime APIs
+UART1.$name = "UART_DUMP";
+// Use Hardware - Select the hardware to use, or 'None' to use available header pins
+UART1.$hardware = system.deviceData.board.components.XDS110UART;
+// Name
+UART1.txPinInstance.$name = "CONFIG_PIN_0";
+// Name
+UART1.rxPinInstance.$name = "CONFIG_PIN_1";
+// Name
+UART1.uart.$name = "MyUART1";
+// Suggest solution
+GPIO1.gpioPin.$suggestSolution = "19";
+// Suggest solution
+GPIO2.gpioPin.$suggestSolution = "20";
+// Suggest solution
+UART1.uart.$suggestSolution = "UART0";
+// Suggest solution
+UART1.uart.txPin.$suggestSolution = "8";
+// Suggest solution
+UART1.uart.rxPin.$suggestSolution = "7";
