@@ -24,6 +24,14 @@ icall_userCfg_t user0Cfg = BLE_USER_CFG;
 
 #endif // USE_DEFAULT_USER_CFG
 
+#ifdef USE_UART1
+#define Log_error0(fmt, ...) {}
+#define Log_error1(fmt, ...) {}
+#define Log_error2(fmt, ...) {}
+#define Log_info0(fmt, ...) {}
+#define Log_info1(fmt, ...) {}
+#define Log_info2(fmt, ...) {}
+#endif
 /*******************************************************************************
  * MACROS
  */
@@ -67,46 +75,48 @@ extern void AssertHandler(uint8 assertCause, uint8 assertSubcause);
  */
 int main()
 {
-  /* Register Application callback to trap asserts raised in the Stack */
-  RegisterAssertCback(AssertHandler);
+    /* Register Application callback to trap asserts raised in the Stack */
+    RegisterAssertCback(AssertHandler);
 
-  Board_initGeneral();
+    Board_initGeneral();
 
-  // Enable iCache prefetching
-  VIMSConfigure(VIMS_BASE, TRUE, TRUE);
+    // Enable iCache prefetching
+    VIMSConfigure(VIMS_BASE, TRUE, TRUE);
 
-  // Enable cache
-  VIMSModeSet(VIMS_BASE, VIMS_MODE_ENABLED);
+    // Enable cache
+    VIMSModeSet(VIMS_BASE, VIMS_MODE_ENABLED);
 
 #if !defined( POWER_SAVING )
-  /* Set constraints for Standby, powerdown and idle mode */
-  // PowerCC26XX_SB_DISALLOW may be redundant
-  Power_setConstraint(PowerCC26XX_SB_DISALLOW);
-  Power_setConstraint(PowerCC26XX_IDLE_PD_DISALLOW);
+    /* Set constraints for Standby, powerdown and idle mode */
+    // PowerCC26XX_SB_DISALLOW may be redundant
+    Power_setConstraint(PowerCC26XX_SB_DISALLOW);
+    Power_setConstraint(PowerCC26XX_IDLE_PD_DISALLOW);
 #endif // POWER_SAVING
 
-  user0Cfg.appServiceInfo->timerTickPeriod = Clock_tickPeriod;
-  user0Cfg.appServiceInfo->timerMaxMillisecond  = ICall_getMaxMSecs();
+    user0Cfg.appServiceInfo->timerTickPeriod = Clock_tickPeriod;
+    user0Cfg.appServiceInfo->timerMaxMillisecond  = ICall_getMaxMSecs();
 
-  /* Initialize the RTOS Log formatting and output to UART in Idle thread.
-   * Note: Define xdc_runtime_Log_DISABLE_ALL and remove define UARTLOG_ENABLE
-   *       to remove all impact of Log statements.
-   * Note: NULL as Params gives 115200,8,N,1 and Blocking mode */
-  UART_init();
-  UartLog_init(UART_open(CONFIG_DISPLAY_UART, NULL));
+    /* Initialize the RTOS Log formatting and output to UART in Idle thread.
+     * Note: Define xdc_runtime_Log_DISABLE_ALL and remove define UARTLOG_ENABLE
+     *       to remove all impact of Log statements.
+     * Note: NULL as Params gives 115200,8,N,1 and Blocking mode */
+#ifndef USE_UART1
+    UART_init();
+    UartLog_init(UART_open(CONFIG_DISPLAY_UART, NULL));
+#endif
     /* Initialize ICall module */
-  ICall_init();
+    ICall_init();
 
-  /* Start tasks of external images - Priority 5 */
-  ICall_createRemoteTasks();
+    /* Start tasks of external images - Priority 5 */
+    ICall_createRemoteTasks();
 
-  /* Kick off application - Priority 1 */
-  BmsMaster_createTask();
+    /* Kick off application - Priority 1 */
+    BmsMaster_createTask();
 
-  /* enable interrupts and start SYS/BIOS */
-  BIOS_start();
+    /* enable interrupts and start SYS/BIOS */
+    BIOS_start();
 
-  return 0;
+    return 0;
 }
 
 
@@ -148,43 +158,43 @@ int main()
  */
 void AssertHandler(uint8 assertCause, uint8 assertSubcause)
 {
-  // Open the display if the app has not already done so
-   Log_error2(">>>STACK ASSERT Cause 0x%02x subCause 0x%02x",
-                 assertCause, assertSubcause);
-  // check the assert cause
-  switch (assertCause)
-  {
+    // Open the display if the app has not already done so
+    Log_error2(">>>STACK ASSERT Cause 0x%02x subCause 0x%02x",
+               assertCause, assertSubcause);
+    // check the assert cause
+    switch (assertCause)
+    {
     case HAL_ASSERT_CAUSE_OUT_OF_MEMORY:
         Log_error0("***ERROR***");
         Log_error0(">> OUT OF MEMORY!");
-      break;
+        break;
 
     case HAL_ASSERT_CAUSE_INTERNAL_ERROR:
-      // check the subcause
-      if (assertSubcause == HAL_ASSERT_SUBCAUSE_FW_INERNAL_ERROR)
-      {
-          Log_error0("***ERROR***");
-          Log_error0(">> INTERNAL FW ERROR!");
-      }
-      else
-      {
-          Log_error0("***ERROR***");
-          Log_error0(">> INTERNAL ERROR!");
-      }
-      break;
+        // check the subcause
+        if (assertSubcause == HAL_ASSERT_SUBCAUSE_FW_INERNAL_ERROR)
+        {
+            Log_error0("***ERROR***");
+            Log_error0(">> INTERNAL FW ERROR!");
+        }
+        else
+        {
+            Log_error0("***ERROR***");
+            Log_error0(">> INTERNAL ERROR!");
+        }
+        break;
 
     case HAL_ASSERT_CAUSE_ICALL_ABORT:
         Log_error0("***ERROR***");
         Log_error0(">> ICALL ABORT!");
-      HAL_ASSERT_SPINLOCK;
-      break;
+        HAL_ASSERT_SPINLOCK;
+        break;
 
     default:
         Log_error0("***ERROR***");
         Log_error0(">> DEFAULT SPINLOCK!");
-      HAL_ASSERT_SPINLOCK;
-  }
-  return;
+        HAL_ASSERT_SPINLOCK;
+    }
+    return;
 }
 
 
@@ -205,7 +215,7 @@ void AssertHandler(uint8 assertCause, uint8 assertSubcause)
  */
 void smallErrorHook(Error_Block *eb)
 {
-  for (;;);
+    for (;;);
 }
 
 
