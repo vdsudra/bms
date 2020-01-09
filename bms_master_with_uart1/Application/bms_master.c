@@ -1,8 +1,10 @@
 #include <string.h>
+#include <stdio.h>
 #include <ti/sysbios/knl/Task.h>
 #include <ti/sysbios/knl/Clock.h>
 #include <ti/sysbios/knl/Event.h>
 #include <ti/sysbios/knl/Queue.h>
+#include <ti/drivers/UART.h>
 #include "bcomdef.h"
 #include <icall.h>
 #include "util.h"
@@ -14,8 +16,7 @@
 #include "ble_user_config.h"
 #include "simple_gatt_profile.h"
 #include "bms_master.h"
-
-#include <ti/drivers/UART.h>
+#include <ti/devices/cc13x2_cc26x2/driverlib/aon_rtc.h>
 
 /*********************************************************************
  * MACROS
@@ -91,6 +92,26 @@
 
 //Default connection handle which is set when group member is created
 #define GROUP_INITIALIZED_CONNECTION_HANDLE  0xFFFF
+
+typedef struct {
+    //uint8_t time[15];   // DD:MM:YY_HH:MM with null
+    int32_t voltage;
+    int32_t current;
+    int32_t temperature;
+}Bms_sensor_data;
+
+struct Bms_Uart_Data
+{
+    uint8_t flag;
+    uint8_t data[20];
+    Bms_sensor_data bms_data;
+};
+
+//uint8_t t_data[(MAX_NUM_BLE_CONNS *  (20 + 2)) + 3 ] = {0};
+char t_data[512] = {0};
+struct Bms_Uart_Data bms_uart_data[MAX_NUM_BLE_CONNS] = {0};
+UART_Params uartParams;
+UART_Handle uart;
 
 #define Log_error0(fmt, ...) {}
 #define Log_error1(fmt, ...) {}
@@ -176,16 +197,7 @@ typedef struct
 
 uint8_t reqData[5][12] = {"Unknown","Voltage", "Current", "Temperature"};
 
-struct Bms_Uart_Data
-{
-    uint8_t flag;
-    uint8_t data[20];
-};
 
-struct Bms_Uart_Data bms_uart_data[MAX_NUM_BLE_CONNS] = {0};
-UART_Params uartParams;
-
-UART_Handle uart;
 /*********************************************************************
  * GLOBAL VARIABLES
  */
@@ -600,7 +612,6 @@ static void BmsLoop(uintptr_t a0, uintptr_t a1){
 
     while(1){
         Log_info0("Scanning to get data..!");
-        Log_info1("No of connected devices --> %d ", numConn);
         for(i=0; i < MAX_NUM_BLE_CONNS; i++){
             if(connList[i].connHandle != LINKDB_CONNHANDLE_INVALID && !(connList[i].charHandle)){
                 BmsMaster_doSelectConn(i);
@@ -609,10 +620,10 @@ static void BmsLoop(uintptr_t a0, uintptr_t a1){
                 BmsMaster_enqueueMsg(BMS_EVT_SEND_RQT, i, NULL);
             }
         } // for connected
-        //Task_sleep(CLK_SEC * 10);
+        Task_sleep(CLK_SEC * 10);
         //Send data to Uart
         BmsMaster_enqueueMsg(BMS_EVT_SENT_UART, 0, NULL);
-        Task_sleep(CLK_SEC * 5);
+        Task_sleep(CLK_SEC * 10);
     } // While infinite
 }
 static void BmsMaster_taskFxn(uintptr_t a0, uintptr_t a1)
@@ -1040,7 +1051,7 @@ static void BmsMaster_processAppMsg(bmsEvt_t *pMsg)
 
     case BMS_EVT_SEND_RQT:
     {
-        Log_info1("BMS_EVT_SEND_RQT : Sending GATT Read request to [%d] device.",pMsg->hdr.state);
+        Log_info1("BMS_EVT_SEND_RQT : Sending GATT Read request to [%s] device.",(uintptr_t)Util_convertBdAddr2Str(connList[pMsg->hdr.state].addr));
         attReadReq_t req;
         req.handle = connList[pMsg->hdr.state].charHandle;
         GATT_ReadCharValue(connList[pMsg->hdr.state].connHandle, &req, selfEntity);
@@ -1050,39 +1061,52 @@ static void BmsMaster_processAppMsg(bmsEvt_t *pMsg)
     case BMS_EVT_SENT_UART:
     {
         Log_info0("Request received to flush data on UART port");
-        //if(numConn){
-        uint8_t i,j;
-        uint8_t t_data[256] = {0};
-        uint8_t t_len = 0;
-        for (i = 0; i < MAX_NUM_BLE_CONNS; i++){
-            bms_uart_data[i].flag = 1;
-            memcpy(bms_uart_data[i].data, "This is 20 byte data", 20);
-        }
-
-        t_data[t_len++] = '{';
-        for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
-        {
-            if(bms_uart_data[i].flag)
-            {
-                //t_len = 0;
-                t_data[t_len++] = '{';
+        memset(t_data, '\0', sizeof(t_data));
 #if 0
-                for(j=0 ;j<20; j++){
-                    t_data[t_len++] = bms_uart_data[i].data[j];
-                }
-#endif
-                memcpy(&t_data[t_len], bms_uart_data[i].data, 20);
-                t_len +=20;
-                t_data[t_len++] = '}';
-                //UART_write(uart, &t_data, t_len);
+        {
+            int i;
+            for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
+            {
+                bms_uart_data[i].bms_data.voltage = 111 * i;
+                bms_uart_data[i].bms_data.current = 10 * i;
+                bms_uart_data[i].bms_data.temperature = 12 * i;
+                bms_uart_data[i].flag = 1;
             }
         }
-        t_data[t_len++] = '}';
-        t_data[t_len++] = '\r';
-        t_data[t_len++] = '\n';
-        UART_write(uart, &t_data, t_len);
+#endif
+
+        if(numConn){
+            Log_info1("No of connected devices [%d] ", numConn);
+            uint8_t i;
+            static uint32_t val;
+            unsigned int t_len = 0;
+            val = AONRTCCompareValueGet(AON_RTC_CH0);
+
+            t_data[t_len++] = '{';
+            sprintf(&t_data[t_len],"%d",val);
+            t_len = strlen(t_data);
+            for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
+            {
+                if(bms_uart_data[i].flag)
+                {
+                    sprintf(&t_data[t_len],"{Voltage:%d, Current:%d, Temperature:%d}",
+                            bms_uart_data[i].bms_data.voltage, bms_uart_data[i].bms_data.current,
+                            bms_uart_data[i].bms_data.temperature);
+                    Log_info2("Node %d data: %s", i, (uintptr_t)t_data);
+                    t_len = strlen(t_data);
+                }
+            }
+            t_data[t_len++] = '}';
+            //t_data[t_len++] = '\r';
+            t_data[t_len++] = '\n';
+            UART_write(uart, &t_data, t_len);
+
+        }
+        else
+        {
+            Log_info0("No device connected..");
+        }
     }
-    //}
 
     default:
         // Do nothing.
@@ -1389,14 +1413,20 @@ static void BmsMaster_processGATTMsg(gattMsgEvent_t *pMsg)
             else
             {
                 // After a successful read, display the read value
-                Log_info1("Get %s",(uintptr_t)pMsg->msg.readRsp.pValue);
+                //Log_info1("Get %s",(uintptr_t)pMsg->msg.readRsp.pValue);
                 uint8_t i;
 
                 for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
                 {
                     if (connList[i].connHandle != LINKDB_CONNHANDLE_INVALID && pMsg->connHandle == connList[i].connHandle)
                     {
-                        memcpy(bms_uart_data[i].data, pMsg->msg.readRsp.pValue, 20);
+                        //memcpy(bms_uart_data[i].data, pMsg->msg.readRsp.pValue, 20);
+                        //memcpy((void *)&bms_uart_data[i].bms_data, pMsg->msg.readRsp.pValue, sizeof(Bms_sensor_data));
+                        memcpy(&bms_uart_data[i].bms_data, pMsg->msg.readRsp.pValue, sizeof(Bms_sensor_data));
+                        //Log_info1("Time: %s",(uintptr_t)bms_uart_data[i].bms_data.time);
+                        Log_info1("Voltage: %d", bms_uart_data[i].bms_data.voltage);
+                        Log_info1("Current: %d", bms_uart_data[i].bms_data.current);
+                        Log_info1("Current: %d", bms_uart_data[i].bms_data.temperature);
                     }
                 }
             }
@@ -1680,7 +1710,7 @@ static void BmsMaster_processGATTDiscEvent(gattMsgEvent_t *pMsg)
 {
     if (discState == BLE_DISC_STATE_MTU)
     {
-        Log_info0("BLE_DISC_STATE_MTU");
+        Log_info0("BLE_DISC_STATE_MTU : MTU size response received, discover service");
         // MTU size response received, discover simple service
         if (pMsg->method == ATT_EXCHANGE_MTU_RSP)
         {
@@ -1697,7 +1727,7 @@ static void BmsMaster_processGATTDiscEvent(gattMsgEvent_t *pMsg)
     }
     else if (discState == BLE_DISC_STATE_SVC)
     {
-        Log_info0("BLE_DISC_STATE_SVC");
+        Log_info0("BLE_DISC_STATE_SVC : Service found, store handles");
         // Service found, store handles
         if (pMsg->method == ATT_FIND_BY_TYPE_VALUE_RSP &&
                 pMsg->msg.findByTypeValueRsp.numInfo > 0)
@@ -1737,6 +1767,7 @@ static void BmsMaster_processGATTDiscEvent(gattMsgEvent_t *pMsg)
         if ((pMsg->method == ATT_READ_BY_TYPE_RSP) &&
                 (pMsg->msg.readByTypeRsp.numPairs > 0))
         {
+            Log_info0("Characteristic found, store handle");
             uint8_t connIndex = BmsMaster_getConnIndex(bmsConnHandle);
 
             // connIndex cannot be equal to or greater than MAX_NUM_BLE_CONNS
