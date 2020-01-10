@@ -18,6 +18,8 @@
 #include "bms_master.h"
 #include <ti/devices/cc13x2_cc26x2/driverlib/aon_rtc.h>
 
+#include <ti/ble5stack/common/cc26xx/time/utc_clock.h> // for UTC_init()
+#include <ti/ble5stack/common/cc26xx/time/utc_clock.c> // for UTC_init()
 /*********************************************************************
  * MACROS
  */
@@ -31,6 +33,13 @@
 #ifndef USE_UART1
 #include <ti/common/cc26xx/uartlog/UartLog.h>
 #endif
+
+// BMS Service and Characteristic UUID
+#define  BMS_SERV_UUID              0xEDE0
+#define  BMS_ALLDATA_CHAR_UUID      0xEDE1
+#define  BMS_VOLTAGE_CHAR_UUID      0xEDE2
+#define  BMS_CURRENT_CHAR_UUID      0xEDE3
+#define  BMS_TEMPERATURE_CHAR_UUID  0xEDE4
 
 // Application events
 #define BMS_EVT_KEY_CHANGE          0x01
@@ -150,10 +159,7 @@ enum
     BLE_DISC_STATE_IDLE,                // Idle
     BLE_DISC_STATE_MTU,                 // Exchange ATT MTU size
     BLE_DISC_STATE_SVC,                 // Service discovery
-    BLE_DISC_STATE_CHAR,                // Characteristic discovery
-    BLE_DISC_STATE_VOLTAGE,             // Voltage discovery
-    BLE_DISC_STATE_CURRENT,             // Current discovery
-    BLE_DISC_STATE_TEMPERATURE          // Temperature discovery
+    BLE_DISC_STATE_CHAR                 // Characteristic discovery
 };
 
 // App event passed from profiles.
@@ -176,9 +182,6 @@ typedef struct
     uint16_t connHandle;        // Connection Handle
     uint8_t  addr[B_ADDR_LEN];  // Peer Device Address
     uint8_t  charHandle;        // Characteristic Handle
-    uint8_t  charHandle1;        // Characteristic Handle for voltage
-    uint8_t  charHandle2;        // Characteristic Handle for current
-    uint8_t  charHandle3;        // Characteristic Handle for temperature
     Clock_Struct *pRssiClock;   // pointer to clock struct
 } connRec_t;
 
@@ -554,6 +557,7 @@ void BmsMaster_createTask(void)
 static void BmsMaster_init(void)
 {
     uint8_t i;
+    UTC_init();
 
     // ******************************************************************
     // N0 STACK API CALLS CAN OCCUR BEFORE THIS CALL TO ICall_registerApp
@@ -633,16 +637,6 @@ static void BmsMaster_init(void)
 #endif
 }
 
-/*********************************************************************
- * @fn      BmsMaster_taskFxn
- *
- * @brief   Application task entry point for the Bms Master.
- *
- * @param   none
- *
- * @return  events not processed
- */
-
 static void BmsLoop(uintptr_t a0, uintptr_t a1){
     uint8_t i;
 
@@ -650,37 +644,6 @@ static void BmsLoop(uintptr_t a0, uintptr_t a1){
     BmsMaster_doAutoConnect(1);
     while(1){
         Log_info0("Scanning to get data..!");
-#if 0
-        if(AONRTCActive()){
-            Log_info0("RTC is enabled" );
-            //static uint32_t t_val;
-            //t_val = AONRTCCaptureValueCh1Get();
-            //Log_info1("AONRTCCaptureValueCh1Get --> %d ", t_val);
-            if(AONRTCChannelActive(AON_RTC_CH0)){
-                Log_info0("AON_RTC_CH0 Active ");
-
-                static uint32_t val;
-                val = AONRTCSecGet();
-                Log_info1("AONRTCSecGet val = %d", val);
-
-                val = AONRTCCompareValueGet(AON_RTC_CH0);
-                Log_info1("AONRTCCompareValueGet(AON_RTC_CH0) val = %d", val);
-
-                val = AONRTCCompareValueGet(AON_RTC_CH1);
-                Log_info1("AONRTCCompareValueGet(AON_RTC_CH1) val = %d", val);
-            }
-            if(AONRTCChannelActive(AON_RTC_CH1)){
-                Log_info0("AON_RTC_CH1 Active ");
-            }
-            if(AONRTCChannelActive(AON_RTC_CH2)){
-                Log_info0("AON_RTC_CH2 Active ");
-            }
-
-        }
-        else
-            Log_info0("RTC is disabled" );
-
-#endif
         for(i=0; i < MAX_NUM_BLE_CONNS; i++){
             if(connList[i].connHandle != LINKDB_CONNHANDLE_INVALID && !(connList[i].charHandle)){
                 BmsMaster_doSelectConn(i);
@@ -695,6 +658,16 @@ static void BmsLoop(uintptr_t a0, uintptr_t a1){
         Task_sleep(CLK_SEC * 10);
     } // While infinite
 }
+
+/*********************************************************************
+ * @fn      BmsMaster_taskFxn
+ *
+ * @brief   Application task entry point for the Bms Master.
+ *
+ * @param   none
+ *
+ * @return  events not processed
+ */
 static void BmsMaster_taskFxn(uintptr_t a0, uintptr_t a1)
 {
     // Initialize application
@@ -1134,24 +1107,27 @@ static void BmsMaster_processAppMsg(bmsEvt_t *pMsg)
 #if 0
         {
             int i;
-        for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
-        {
-            bms_uart_data[i].bms_data.voltage = 111 * i;
-            bms_uart_data[i].bms_data.current = 10 * i;
-            bms_uart_data[i].bms_data.temperature = 12 * i;
-            bms_uart_data[i].flag = 1;
-        }
+            for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
+            {
+                bms_uart_data[i].bms_data.voltage = 111 * i;
+                bms_uart_data[i].bms_data.current = 10 * i;
+                bms_uart_data[i].bms_data.temperature = 12 * i;
+                bms_uart_data[i].flag = 1;
+            }
         }
 #endif
+
         if(numConn){
             Log_info1("No of connected devices [%d] ", numConn);
             uint8_t i;
-            static uint32_t val;
             unsigned int t_len = 0;
-            val = AONRTCCompareValueGet(AON_RTC_CH0);
+            UTCTime time_tmp;
+            time_tmp = UTC_getClock();
+            UTCTimeStruct tm;
+            UTC_convertUTCTime(&tm, time_tmp);
 
             t_data[t_len++] = '{';
-            sprintf(&t_data[t_len],"%d",val);
+            sprintf(&t_data[t_len],"%d:%d:%d_%d:%d:%d", tm.day, tm.month, tm.year, tm.hour, tm.minutes, tm.seconds);
             t_len = strlen(t_data);
             for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
             {
@@ -1173,8 +1149,8 @@ static void BmsMaster_processAppMsg(bmsEvt_t *pMsg)
             //t_data[t_len++] = '\n';
             UART_write(uart, &t_data, t_len);
 #else
-            //t_data[24] = NULL;
-            Log_info1("All node data: %s",(uintptr_t)t_data);
+            if(numConn)
+                Log_info1("All node data: %s",(uintptr_t)t_data);
 #endif
         }
         else
@@ -1493,15 +1469,13 @@ static void BmsMaster_processGATTMsg(gattMsgEvent_t *pMsg)
 
                 for (i = 0; i < MAX_NUM_BLE_CONNS; i++)
                 {
-                    if (connList[i].connHandle != LINKDB_CONNHANDLE_INVALID && pMsg->connHandle == connList[i].connHandle)
+                    if (connList[i].connHandle != LINKDB_CONNHANDLE_INVALID && \
+                            pMsg->connHandle == connList[i].connHandle)
                     {
-                        //memcpy(bms_uart_data[i].data, pMsg->msg.readRsp.pValue, 20);
-                        //memcpy((void *)&bms_uart_data[i].bms_data, pMsg->msg.readRsp.pValue, sizeof(Bms_sensor_data));
                         memcpy(&bms_uart_data[i].bms_data, pMsg->msg.readRsp.pValue, sizeof(Bms_sensor_data));
-                        //Log_info1("Time: %s",(uintptr_t)bms_uart_data[i].bms_data.time);
                         Log_info1("Voltage: %d", bms_uart_data[i].bms_data.voltage);
                         Log_info1("Current: %d", bms_uart_data[i].bms_data.current);
-                        Log_info1("Current: %d", bms_uart_data[i].bms_data.temperature);
+                        Log_info1("Temperature: %d", bms_uart_data[i].bms_data.temperature);
                     }
                 }
             }
@@ -1789,11 +1763,7 @@ static void BmsMaster_processGATTDiscEvent(gattMsgEvent_t *pMsg)
         // MTU size response received, discover simple service
         if (pMsg->method == ATT_EXCHANGE_MTU_RSP)
         {
-            /*
-      uint8_t uuid[ATT_BT_UUID_SIZE] = { LO_UINT16(SIMPLEPROFILE_SERV_UUID),
-                                         HI_UINT16(SIMPLEPROFILE_SERV_UUID) };
-             */
-            uint8_t uuid[ATT_BT_UUID_SIZE] = { LO_UINT16(0xEDE0), HI_UINT16(0xEDE0)};
+            uint8_t uuid[ATT_BT_UUID_SIZE] = { LO_UINT16(BMS_SERV_UUID), HI_UINT16(BMS_SERV_UUID)};
             discState = BLE_DISC_STATE_SVC;
 
             // Discovery simple service
@@ -1826,51 +1796,24 @@ static void BmsMaster_processGATTDiscEvent(gattMsgEvent_t *pMsg)
                 req.startHandle = svcStartHdl;
                 req.endHandle = svcEndHdl;
                 req.type.len = ATT_BT_UUID_SIZE;
-                //req.type.uuid[0] = LO_UINT16(SIMPLEPROFILE_CHAR1_UUID);
-                //req.type.uuid[1] = HI_UINT16(SIMPLEPROFILE_CHAR1_UUID);
+                req.type.uuid[0] = LO_UINT16(BMS_ALLDATA_CHAR_UUID);
+                req.type.uuid[1] = HI_UINT16(BMS_ALLDATA_CHAR_UUID);
 
-                // All data
-                req.type.uuid[0] = LO_UINT16(0xEDE1);
-                req.type.uuid[1] = HI_UINT16(0xEDE1);
                 VOID GATT_DiscCharsByUUID(pMsg->connHandle, &req, selfEntity);
-                Log_info0("Sent request for All data");
-#if 0
-                // Volage
-                Task_sleep(CLK_SEC * 2);
-                req.type.uuid[0] = LO_UINT16(0xEDE2);
-                req.type.uuid[1] = HI_UINT16(0xEDE2);
-                VOID GATT_DiscCharsByUUID(pMsg->connHandle, &req, selfEntity);
-                Log_info0("Sent request for Voltage");
-
-                //Current
-                Task_sleep(CLK_SEC * 2);
-                req.type.uuid[0] = LO_UINT16(0xEDE3);
-                req.type.uuid[1] = HI_UINT16(0xEDE3);
-                VOID GATT_DiscCharsByUUID(pMsg->connHandle, &req, selfEntity);
-                Log_info0("Sent request for Current");
-
-                // Temperature
-                Task_sleep(CLK_SEC * 2);
-                req.type.uuid[0] = LO_UINT16(0xEDE4);
-                req.type.uuid[1] = HI_UINT16(0xEDE4);
-                VOID GATT_DiscCharsByUUID(pMsg->connHandle, &req, selfEntity);
-                Log_info0("Sent request for Temperature");
-#endif
-
             }
         }
     }
     else if (discState == BLE_DISC_STATE_CHAR)
     {
-        Log_info0("BLE_DISC_STATE_CHAR : Response received for Characteristic discovery");
-        //Log_info1("readByTypeRsp.numPairs = %d", pMsg->msg.readByTypeRsp.numPairs);
-        //Log_info1("readByTypeRsp.len = %d", pMsg->msg.readByTypeRsp.len);
-        //Log_info1("readByTypeRsp.dataLen = %d", pMsg->msg.readByTypeRsp.dataLen);
-
-        // int i;
-        // for(i = 0; i< (pMsg->msg.readByTypeRsp.len) ; i++){
-        //  Log_info2("data[%d] : 0x%x",i, pMsg->msg.readByTypeRsp.pDataList[i]);
-        // }
+        //        Log_info0("BLE_DISC_STATE_CHAR : Response received for Characteristic discovery");
+        //        Log_info1("readByTypeRsp.numPairs = %d", pMsg->msg.readByTypeRsp.numPairs);
+        //        Log_info1("readByTypeRsp.len = %d", pMsg->msg.readByTypeRsp.len);
+        //        Log_info1("readByTypeRsp.dataLen = %d", pMsg->msg.readByTypeRsp.dataLen);
+        //
+        //        int i;
+        //        for(i = 0; i< (pMsg->msg.readByTypeRsp.len) ; i++){
+        //            Log_info2("data[%d] : 0x%x",i, pMsg->msg.readByTypeRsp.pDataList[i]);
+        //        }
         // Characteristic found, store handle
         if ((pMsg->method == ATT_READ_BY_TYPE_RSP) &&
                 (pMsg->msg.readByTypeRsp.numPairs > 0))
@@ -1885,7 +1828,6 @@ static void BmsMaster_processGATTDiscEvent(gattMsgEvent_t *pMsg)
             connList[connIndex].charHandle
             = BUILD_UINT16(pMsg->msg.readByTypeRsp.pDataList[3],
                            pMsg->msg.readByTypeRsp.pDataList[4]);
-            Log_info1("connList[connIndex].charHandle: %d", connList[connIndex].charHandle);
         }
         else{
             Log_info0("Characteristic not found..");
@@ -2018,9 +1960,7 @@ static uint8_t BmsMaster_addConnInfo(uint16_t connHandle, uint8_t *pAddr)
             connList[i].connHandle = connHandle;
             memcpy(connList[i].addr, pAddr, B_ADDR_LEN);
             numConn++;
-            uint8_t dummy[20] = "Initial Dummy Data";
-            memcpy(bms_uart_data[i].data, dummy,20);
-            bms_uart_data[i].flag = 1;
+            bms_uart_data[i].flag = 0;
             break;
         }
     }
@@ -2334,7 +2274,7 @@ bool BmsMaster_doAutoConnect(uint8_t index)
         autoConnect = AUTOCONNECT_DISABLE;
         groupListElem_t *tempMember;
         //Traverse list to search if advertiser already in list.
-        for (tempMember = (groupListElem_t *)osal_list_head(&groupList); tempMember != NULL; tempMember = (groupListElem_t *)osal_list_next((osal_list_elem *)tempMember)) 
+        for (tempMember = (groupListElem_t *)osal_list_head(&groupList); tempMember != NULL; tempMember = (groupListElem_t *)osal_list_next((osal_list_elem *)tempMember))
         {
             osal_list_remove(&groupList,(osal_list_elem *)tempMember);
             ICall_free(tempMember);
